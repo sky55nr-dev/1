@@ -2,7 +2,7 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from google import genai  # ★ 구글 AI 최신 라이브러리 추가
+from google import genai
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -14,21 +14,23 @@ def send_telegram_message(message):
     res = requests.post(send_url, data={"chat_id": CHAT_ID, "text": message})
     print(f"👉 텔레그램 전송 결과: {res.status_code} (200이면 메시지 발송 성공!)")
 
-# ★ 본문을 AI에게 넘겨 깔끔하게 요약 정리받는 함수!
+# ★ 에러 메시지를 명확히 알려주도록 안전하게 수정된 AI 요약 함수!
 def summarize_with_ai(content_text):
     if not GEMINI_API_KEY:
-        return "⚠️ 구글 AI 키가 설정되지 않아 원본 앞부분만 표시합니다:\n" + content_text[:200]
+        return "⚠️ [에러 원인] 깃허브 Secrets에 GEMINI_API_KEY가 설정되지 않았거나 오타가 있습니다!"
         
     try:
-        # 구글의 가장 빠르고 똑똑한 최신 모델(gemini-2.5-flash) 사용
         client = genai.Client(api_key=GEMINI_API_KEY)
+        
+        # 글자가 너무 길면 에러가 날 수 있으므로 안전하게 1500자까지만 자른 후 AI에게 전달!
+        safe_text = content_text[:1500]
         
         prompt = (
             "너는 대학생을 위한 친절하고 똑똑한 AI 비서야. "
             "아래의 대학교 공지사항 본문 내용을 읽고, 학생이 알아야 할 핵심 내용(신청 기간, 대상, 혜택, 장소 등 중요한 정보)을 "
             "가장 깔끔하고 읽기 쉽게 '개조식(• 기호 사용) 3줄 요약 정리' 형태로 작성해 줘. "
             "인사말이나 불필요한 서론은 빼고 오직 요약된 내용만 답해.\n\n"
-            f"[공지사항 본문]\n{content_text[:3000]}"
+            f"[공지사항 본문]\n{safe_text}"
         )
         
         response = client.models.generate_content(
@@ -38,7 +40,8 @@ def summarize_with_ai(content_text):
         return response.text.strip()
     except Exception as e:
         print(f"AI 요약 중 에러 발생: {e}")
-        return "⚠️ AI 요약 중 오류가 발생하여 본문 일부를 표시합니다:\n" + content_text[:200]
+        # ★ 진짜 에러 이유를 텔레그램 메시지로 바로 보여줍니다!
+        return f"⚠️ [AI 에러 원인]: {str(e)[:100]}"
 
 def get_notice_content(notice_url, headers):
     try:
@@ -63,7 +66,6 @@ def check_new_notice():
     response = requests.get(URL, headers=headers)
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # 2번째 줄(일반 최신 공지) 가져오기
     latest_post = soup.select_one('.board_list table tr:nth-of-type(2) td.subject a')
     if not latest_post:
         posts = soup.select('.board_list td.subject a')
@@ -80,8 +82,8 @@ def check_new_notice():
     latest_link = urljoin("https://home.knu.ac.kr", latest_post.get('href', ''))
     print(f"✅ 웹사이트에서 확인한 최신글 제목: {latest_title}")
 
-    # ★ [현재 테스트 모드] AI가 정리한 본문을 즉시 확인하기 위해 무조건 알림을 보냅니다!
-    print("🤖 AI 비서가 본문을 열심히 읽고 핵심 요약 정리를 하는 중입니다...")
+    # [테스트 모드] AI 요약 알림을 즉시 발송하여 에러 이유를 확인합니다!
+    print("🤖 AI 비서가 본문을 요약하는 중...")
     
     raw_content = get_notice_content(latest_link, headers)
     ai_summary = summarize_with_ai(raw_content)
@@ -96,7 +98,7 @@ def check_new_notice():
     
     with open("latest_notice.txt", "w", encoding="utf-8") as f:
         f.write(latest_title)
-    print("✅ AI 요약 정리 알림 발송 완료!")
+    print("✅ 테스트 알림 발송 완료!")
 
 if __name__ == "__main__":
     check_new_notice()
