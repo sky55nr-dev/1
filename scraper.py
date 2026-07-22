@@ -14,15 +14,12 @@ def send_telegram_message(message):
     res = requests.post(send_url, data={"chat_id": CHAT_ID, "text": message})
     print(f"👉 텔레그램 전송 결과: {res.status_code} (200이면 메시지 발송 성공!)")
 
-# ★ 에러 메시지를 명확히 알려주도록 안전하게 수정된 AI 요약 함수!
 def summarize_with_ai(content_text):
     if not GEMINI_API_KEY:
-        return "⚠️ [에러 원인] 깃허브 Secrets에 GEMINI_API_KEY가 설정되지 않았거나 오타가 있습니다!"
+        return "⚠️ [에러 원인] 깃허브 Secrets에 GEMINI_API_KEY가 설정되지 않았습니다!"
         
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
-        
-        # 글자가 너무 길면 에러가 날 수 있으므로 안전하게 1500자까지만 자른 후 AI에게 전달!
         safe_text = content_text[:1500]
         
         prompt = (
@@ -33,14 +30,14 @@ def summarize_with_ai(content_text):
             f"[공지사항 본문]\n{safe_text}"
         )
         
+        # ★ 핵심 수정: 구글의 공식 표준 무료 모델인 'gemini-1.5-flash'로 변경했습니다!
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-1.5-flash',
             contents=prompt,
         )
         return response.text.strip()
     except Exception as e:
         print(f"AI 요약 중 에러 발생: {e}")
-        # ★ 진짜 에러 이유를 텔레그램 메시지로 바로 보여줍니다!
         return f"⚠️ [AI 에러 원인]: {str(e)[:100]}"
 
 def get_notice_content(notice_url, headers):
@@ -82,7 +79,7 @@ def check_new_notice():
     latest_link = urljoin("https://home.knu.ac.kr", latest_post.get('href', ''))
     print(f"✅ 웹사이트에서 확인한 최신글 제목: {latest_title}")
 
-    # [테스트 모드] AI 요약 알림을 즉시 발송하여 에러 이유를 확인합니다!
+    # [테스트 모드] AI 요약 알림을 즉시 발송합니다!
     print("🤖 AI 비서가 본문을 요약하는 중...")
     
     raw_content = get_notice_content(latest_link, headers)
