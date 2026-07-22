@@ -30,7 +30,6 @@ def summarize_with_ai(content_text):
             f"[공지사항 본문]\n{safe_text}"
         )
         
-        # ★ 핵심 수정: 구글의 최신 표준 모델인 'gemini-3.5-flash'로 변경했습니다!
         response = client.models.generate_content(
             model='gemini-3.5-flash',
             contents=prompt,
@@ -63,6 +62,7 @@ def check_new_notice():
     response = requests.get(URL, headers=headers)
     soup = BeautifulSoup(response.text, 'html.parser')
     
+    # 2번째 줄(일반 최신 공지) 가져오기
     latest_post = soup.select_one('.board_list table tr:nth-of-type(2) td.subject a')
     if not latest_post:
         posts = soup.select('.board_list td.subject a')
@@ -79,23 +79,36 @@ def check_new_notice():
     latest_link = urljoin("https://home.knu.ac.kr", latest_post.get('href', ''))
     print(f"✅ 웹사이트에서 확인한 최신글 제목: {latest_title}")
 
-    # [테스트 모드] AI 요약 알림을 즉시 발송합니다!
-    print("🤖 최신 3.5 버전 AI 비서가 본문을 요약하는 중...")
-    
-    raw_content = get_notice_content(latest_link, headers)
-    ai_summary = summarize_with_ai(raw_content)
-    
-    message = (
-        f"🔔 [경북대 AIC 공지사항 핵심 정리]\n\n"
-        f"📌 제목: {latest_title}\n\n"
-        f"🤖 AI 3줄 요약 정리:\n{ai_summary}\n\n"
-        f"🔗 원문 바로가기:\n{latest_link}"
-    )
-    send_telegram_message(message)
-    
-    with open("latest_notice.txt", "w", encoding="utf-8") as f:
-        f.write(latest_title)
-    print("✅ 테스트 알림 발송 완료!")
+    # ★ 실전 모드: 이전에 저장된 최신글 제목(latest_notice.txt) 불러오기
+    last_title = ""
+    if os.path.exists("latest_notice.txt"):
+        with open("latest_notice.txt", "r", encoding="utf-8") as f:
+            last_title = f.read().strip()
+            
+    print(f"📁 파일에 기록되어 있던 이전 글 제목: {last_title}")
+
+    # ★ 비교 판단: 웹사이트 최신글이 이전 글과 '다를 때만' 알림 전송!
+    if latest_title != last_title:
+        print("🚨 새로운 공지사항 발견! AI가 본문 요약 정리를 시작합니다...")
+        
+        raw_content = get_notice_content(latest_link, headers)
+        ai_summary = summarize_with_ai(raw_content)
+        
+        message = (
+            f"🔔 [경북대 AIC 공지사항 핵심 정리]\n\n"
+            f"📌 제목: {latest_title}\n\n"
+            f"🤖 AI 3줄 요약 정리:\n{ai_summary}\n\n"
+            f"🔗 원문 바로가기:\n{latest_link}"
+        )
+        send_telegram_message(message)
+        
+        # 알림을 보낸 뒤에는 새 글 제목을 파일에 덮어써서 다음 시간엔 안 오도록 기억시킴
+        with open("latest_notice.txt", "w", encoding="utf-8") as f:
+            f.write(latest_title)
+        print("✅ 최신글 업데이트 및 AI 요약 알림 전송 완벽 성공!")
+    else:
+        # 제목이 똑같다면 메시지 전송 없이 조용히 종료!
+        print("💤 새로 올라온 공지사항이 없습니다. (알림 전송 안 함)")
 
 if __name__ == "__main__":
     check_new_notice()
