@@ -34,7 +34,7 @@ def check_new_notice():
     # latest_post = posts[1] 
     
     # 방법 B) 더 똑똑한 방법: 위에서부터 글을 순서대로 보면서 '공지'나 '필독'이 없는 첫 번째 일반 글을 찾기!
-    latest_post = posts[0] # 기본값은 0번으로 설정
+    latest_post = posts[1] # 기본값은 0번으로 설정
     for post in posts:
         title_text = post.text.strip()
         # 제목에 [공지], [필독], 공지, 필독 등의 단어가 포함되어 있으면 건너뜀 (사이트 맞춤 설정)
