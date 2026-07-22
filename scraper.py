@@ -30,9 +30,9 @@ def summarize_with_ai(content_text):
             f"[공지사항 본문]\n{safe_text}"
         )
         
-        # ★ 핵심 수정: 구글의 공식 표준 무료 모델인 'gemini-1.5-flash'로 변경했습니다!
+        # ★ 핵심 수정: 지원이 종료된 1.5 대신 작동하는 최신 'gemini-2.5-flash'로 수정했습니다!
         response = client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-2.5-flash',
             contents=prompt,
         )
         return response.text.strip()
