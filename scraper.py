@@ -30,9 +30,9 @@ def summarize_with_ai(content_text):
             f"[공지사항 본문]\n{safe_text}"
         )
         
-        # ★ 핵심 수정: 지원이 종료된 1.5 대신 작동하는 최신 'gemini-2.5-flash'로 수정했습니다!
+        # ★ 핵심 수정: 구글의 최신 표준 모델인 'gemini-3.5-flash'로 변경했습니다!
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.5-flash',
             contents=prompt,
         )
         return response.text.strip()
@@ -80,7 +80,7 @@ def check_new_notice():
     print(f"✅ 웹사이트에서 확인한 최신글 제목: {latest_title}")
 
     # [테스트 모드] AI 요약 알림을 즉시 발송합니다!
-    print("🤖 AI 비서가 본문을 요약하는 중...")
+    print("🤖 최신 3.5 버전 AI 비서가 본문을 요약하는 중...")
     
     raw_content = get_notice_content(latest_link, headers)
     ai_summary = summarize_with_ai(raw_content)
