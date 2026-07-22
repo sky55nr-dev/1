@@ -1,6 +1,7 @@
 import os
 import requests
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin  # 링크 깨짐 방지를 위해 추가
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -12,19 +13,33 @@ def send_telegram_message(message):
     print(f"텔레그램 전송 결과: {res.status_code} (200이면 성공!)")
 
 def check_new_notice():
-    response = requests.get(URL)
+    # ★ 1. 사람이 크롬 브라우저로 접속하는 것처럼 위장하는 헤더 추가 (필수!)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    response = requests.get(URL, headers=headers)
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # ★ 이 아래 따옴표 안에 아까 복사하신 선택자를 넣으세요!
-    latest_post = soup.select_one('#body_content > div > div.board_list > table > tbody > tr:nth-child(2) > td.subject > a')
+    # ★ 2. > tbody > 를 지우고, 일반 공지(2번째 줄)를 가져오는 가장 안전한 선택자로 변경!
+    # (고정 공지가 1개라고 가정할 때, 목록에서 2번째 글을 선택합니다)
+    latest_post = soup.select_one('.board_list table tr:nth-of-type(2) td.subject a')
     
+    # 만약 위 선택자로도 실패할 경우를 대비한 비상 플랜 (목록의 2번째 링크를 자동으로 잡음)
+    if not latest_post:
+        posts = soup.select('.board_list td.subject a')
+        if len(posts) >= 2:
+            latest_post = posts[1]  # 0번은 고정 공지, 1번이 두 번째(일반 최신) 공지!
+        elif len(posts) == 1:
+            latest_post = posts[0]
+            
     if not latest_post:
         print("🚨 에러: 웹페이지에서 공지사항 글을 전혀 찾지 못했습니다! 선택자를 다시 확인해주세요.")
         return
         
     latest_title = latest_post.text.strip()
-    link_path = latest_post.get('href', '')
-    latest_link = link_path if link_path.startswith('http') else "https://home.knu.ac.kr/HOME/aic/sub.htm?nav_code=aic1635293208" + link_path
+    
+    # ★ 3. 링크 주소가 이상하게 붙어서 깨지는 현상 방지 (urljoin 사용)
+    latest_link = urljoin("https://home.knu.ac.kr", latest_post.get('href', ''))
 
     print(f"✅ 웹사이트에서 읽어온 최신글 제목: {latest_title}")
 
