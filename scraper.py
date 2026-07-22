@@ -2,45 +2,40 @@ import os
 import requests
 from bs4 import BeautifulSoup
 
-# 텔레그램 설정값 가져오기 (GitHub Secrets 활용)
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-
-# 공지사항 웹사이트 주소
-URL = "https://aic.knu.ac.kr/" # 실제 공지사항 게시판 목록 URL로 변경 필요
+URL = "https://aic.knu.ac.kr/"
 
 def send_telegram_message(message):
     send_url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(send_url, data={"chat_id": CHAT_ID, "text": message})
+    res = requests.post(send_url, data={"chat_id": CHAT_ID, "text": message})
+    print(f"텔레그램 전송 결과: {res.status_code} (200이면 성공!)")
 
 def check_new_notice():
     response = requests.get(URL)
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # 공지사항 목록에서 가장 최신 글 제목 추출 (HTML 구조에 맞게 태그 수정 필요)
-    # 예시: 최신 글이 <td class="title"><a href="...">제목</a></td> 형태일 경우
-    latest_post = soup.select_one('#body_content > div > div.board_list > table > tbody > tr:nth-child(2) > td.subject > a') # 웹페이지 구조에 맞춰 변경
+    # ★ 이 아래 따옴표 안에 아까 복사하신 선택자를 넣으세요!
+    latest_post = soup.select_one('#body_content > div > div.board_list > table > tbody > tr:nth-child(2) > td.subject > a')
     
     if not latest_post:
+        print("🚨 에러: 웹페이지에서 공지사항 글을 전혀 찾지 못했습니다! 선택자를 다시 확인해주세요.")
         return
         
     latest_title = latest_post.text.strip()
-    latest_link = "https://aic.knu.ac.kr/" + latest_post.get('href', '')
+    link_path = latest_post.get('href', '')
+    latest_link = link_path if link_path.startswith('http') else "https://aic.knu.ac.kr" + link_path
 
-    # 이전에 저장된 최신 글 제목 읽기
-    last_title = ""
-    if os.path.exists("latest_notice.txt"):
-        with open("latest_notice.txt", "r", encoding="utf-8") as f:
-            last_title = f.read().strip()
+    print(f"✅ 웹사이트에서 읽어온 최신글 제목: {latest_title}")
 
-    # 새 글이 등록되었는지 비교
-    if latest_title != last_title:
-        message = f"[새 공지사항 알림]\n제목: {latest_title}\n링크: {latest_link}"
-        send_telegram_message(message)
-        
-        # 최신 글 제목을 파일에 덮어쓰기
-        with open("latest_notice.txt", "w", encoding="utf-8") as f:
-            f.write(latest_title)
+    # 처음 테스트할 때는 무조건 메시지를 보내도록 강제 실행!
+    message = f"[새 공지사항 테스트 알림]\n제목: {latest_title}\n링크: {latest_link}"
+    send_telegram_message(message)
+    
+    # 이제 성공했으니 latest_notice.txt 파일도 강제로 만듭니다!
+    with open("latest_notice.txt", "w", encoding="utf-8") as f:
+        f.write(latest_title)
+    print("✅ latest_notice.txt 파일 생성 완료!")
 
 if __name__ == "__main__":
     check_new_notice()
