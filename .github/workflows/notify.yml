@@ -2,7 +2,7 @@ name: Check KNU AIC Notice
 
 on:
   schedule:
-    - cron: '0 * * * *' # 매시간 정각마다 실행
+    - cron: '13,33,53 * * * *' # 매시간 정각마다 실행
   workflow_dispatch: # 수동 테스트 버튼
 
 permissions:
