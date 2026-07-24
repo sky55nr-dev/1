@@ -16,7 +16,7 @@ def send_telegram_message(message):
 
 def summarize_with_ai(content_text):
     if not GEMINI_API_KEY:
-        return "⚠️ 깃허브 Secrets에 GEMINI_API_KEY가 없습니다."
+        return "⚠️ GEMINI_API_KEY가 없습니다."
         
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
@@ -30,16 +30,14 @@ def summarize_with_ai(content_text):
             f"[공지사항 본문]\n{safe_text}"
         )
         
-        # 서버 과부하를 잘 피하는 가볍고 빠른 라이트 모델로 설정!
         response = client.models.generate_content(
             model='gemini-3.5-flash-lite',
             contents=prompt,
         )
         return response.text.strip()
     except Exception as e:
-        print(f"AI 요약 중 서버 과부하/에러 발생: {e}")
-        # ★ [핵심 안전장치] AI 서버가 터져도(503 등) 요약 대신 원문 앞부분을 보여주어 알림이 누락되지 않게 함!
-        return f"⚠️ (현재 AI 서버 과부하로 요약을 완료하지 못했습니다. 아래 원문 본문을 참고해주세요)\n\n{content_text[:400]}..."
+        print(f"AI 요약 에러: {e}")
+        return f"⚠️ (AI 요약 실패로 원문을 표시합니다)\n\n{content_text[:400]}..."
 
 def get_notice_content(notice_url, headers):
     try:
@@ -63,47 +61,45 @@ def check_new_notice():
     response = requests.get(URL, headers=headers)
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    latest_post = soup.select_one('.board_list table tr:nth-of-type(2) td.subject a')
-    if not latest_post:
-        posts = soup.select('.board_list td.subject a')
-        if len(posts) >= 2:
-            latest_post = posts[1]
-        elif len(posts) == 1:
-            latest_post = posts[0]
-            
-    if not latest_post:
+    posts = soup.select('.board_list td.subject a')
+    if not posts:
+        posts = soup.select('.board_list table tr a')
+        
+    if not posts:
         print("🚨 에러: 게시글을 찾지 못했습니다.")
         return
+
+    # 고정 공지 건너뛰고 진짜 일반 최신글 선택
+    latest_post = None
+    for post in posts:
+        title = post.text.strip()
+        if "[공지]" in title or "[필독]" in title or " [안내] " in title:
+            continue
+        latest_post = post
+        break
         
+    if not latest_post and len(posts) >= 2:
+        latest_post = posts[1]
+    elif not latest_post:
+        latest_post = posts[0]
+            
     latest_title = latest_post.text.strip()
     latest_link = urljoin("https://home.knu.ac.kr", latest_post.get('href', ''))
-    print(f"✅ 웹사이트에서 확인한 최신글 제목: {latest_title}")
+    print(f"✅ 웹사이트에서 읽어온 최신글 제목: {latest_title}")
 
-    # 실전 모드: 새 글일 때만 알림 전송
-    last_title = ""
-    if os.path.exists("latest_notice.txt"):
-        with open("latest_notice.txt", "r", encoding="utf-8") as f:
-            last_title = f.read().strip()
-            
-    if latest_title != last_title:
-        print("🚨 새 공지사항 발견! 본문 요약 및 알림 전송을 시작합니다...")
-        
-        raw_content = get_notice_content(latest_link, headers)
-        ai_summary = summarize_with_ai(raw_content)
-        
-        message = (
-            f"🔔 [경북대 AIC 공지사항 알림]\n\n"
-            f"📌 제목: {latest_title}\n\n"
-            f"🤖 AI 요약 / 내용 미리보기:\n{ai_summary}\n\n"
-            f"🔗 원문 바로가기:\n{latest_link}"
-        )
-        send_telegram_message(message)
-        
-        with open("latest_notice.txt", "w", encoding="utf-8") as f:
-            f.write(latest_title)
-        print("✅ 최신글 업데이트 및 알림 전송 완벽 성공!")
-    else:
-        print("💤 새로 올라온 공지사항이 없습니다. (알림 전송 안 함)")
+    # ★★★ [비교 과정 완전 삭제] 이전 글 비교 안 하고 무조건 100% 문자 발송! ★★★
+    print("🚨 비교 과정 없이 즉시 문자를 전송합니다...")
+    raw_content = get_notice_content(latest_link, headers)
+    ai_summary = summarize_with_ai(raw_content)
+    
+    message = (
+        f"🔔 [즉시 전송 테스트 알림]\n\n"
+        f"📌 제목: {latest_title}\n\n"
+        f"🤖 AI 요약 / 내용:\n{ai_summary}\n\n"
+        f"🔗 바로가기:\n{latest_link}"
+    )
+    send_telegram_message(message)
+    print("✅ 텔레그램 문자 발송 완료!")
 
 if __name__ == "__main__":
     check_new_notice()
