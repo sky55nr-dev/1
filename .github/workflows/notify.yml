@@ -1,9 +1,9 @@
 name: Check KNU AIC Notice
 
 on:
-  schedule:
-    - cron: '13,33,53 * * * *' # 매시간 정각마다 실행
-  workflow_dispatch: # 수동 테스트 버튼
+  repository_dispatch:
+    types: [run_bot] # 외부에서 찌를 때 쓸 암구호
+  workflow_dispatch:
 
 permissions:
   contents: write
