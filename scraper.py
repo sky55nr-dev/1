@@ -8,6 +8,7 @@ TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 URL = "https://home.knu.ac.kr/HOME/aic/sub.htm?nav_code=aic1635293208"
+HISTORY_FILE = "notice_history.txt" # ★ 수십 개의 글을 기억할 새로운 메모장
 
 def send_telegram_message(message):
     send_url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -16,7 +17,7 @@ def send_telegram_message(message):
 
 def summarize_with_ai(content_text):
     if not GEMINI_API_KEY:
-        return "⚠️ [에러 원인] 깃허브 Secrets에 GEMINI_API_KEY가 설정되지 않았습니다!"
+        return "⚠️ 깃허브 Secrets에 GEMINI_API_KEY가 없습니다!"
         
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
@@ -30,7 +31,6 @@ def summarize_with_ai(content_text):
             f"[공지사항 본문]\n{safe_text}"
         )
         
-        # ★ 빠르고 안정적인 최신 라이트 모델
         response = client.models.generate_content(
             model='gemini-3.5-flash-lite',
             contents=prompt,
@@ -38,7 +38,6 @@ def summarize_with_ai(content_text):
         return response.text.strip()
     except Exception as e:
         print(f"AI 요약 중 에러 발생: {e}")
-        # ★ AI 서버 과부하가 와도 알림이 누락되지 않도록 원문 앞부분을 대신 발송!
         return f"⚠️ (현재 AI 요약 일시 지연으로 원문 일부를 표시합니다)\n\n{content_text[:400]}..."
 
 def get_notice_content(notice_url, headers):
@@ -64,53 +63,70 @@ def check_new_notice():
     response = requests.get(URL, headers=headers)
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # 2번째 줄(일반 최신 공지) 가져오기
-    latest_post = soup.select_one('.board_list table tr:nth-of-type(2) td.subject a')
-    if not latest_post:
-        posts = soup.select('.board_list td.subject a')
-        if len(posts) >= 2:
-            latest_post = posts[1]
-        elif len(posts) == 1:
-            latest_post = posts[0]
-            
-    if not latest_post:
+    # ★ 1. 게시판 1페이지에 있는 "모든" 글을 스캔해서 가져옵니다. (위치 상관 없음!)
+    posts = soup.select('.board_list td.subject a')
+    if not posts:
+        posts = soup.select('.board_list table tr a')
+        
+    if not posts:
         print("🚨 에러: 게시글을 찾지 못했습니다.")
         return
-        
-    latest_title = latest_post.text.strip()
-    latest_link = urljoin("https://home.knu.ac.kr", latest_post.get('href', ''))
-    print(f"✅ 웹사이트에서 확인한 최신글 제목: {latest_title}")
 
-    # ★ 실전 모드: 이전에 저장된 최신글 제목(latest_notice.txt) 불러오기
-    last_title = ""
-    if os.path.exists("latest_notice.txt"):
-        with open("latest_notice.txt", "r", encoding="utf-8") as f:
-            last_title = f.read().strip()
-            
-    print(f"📁 파일에 기록되어 있던 이전 글 제목: {last_title}")
+    current_posts = []
+    for post in posts:
+        title = post.text.strip()
+        link = urljoin("https://home.knu.ac.kr", post.get('href', ''))
+        current_posts.append({'title': title, 'link': link})
 
-    # ★ 비교 판단: 웹사이트 최신글이 이전 글과 '다를 때만' 알림 전송!
-    if latest_title != last_title:
-        print("🚨 새로운 공지사항 발견! AI가 본문 요약 정리를 시작합니다...")
-        
-        raw_content = get_notice_content(latest_link, headers)
+    # ★ 2. 파이썬이 이전에 봤던 글들의 '기억(History)'을 모두 불러옵니다.
+    seen_titles = []
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            seen_titles = [line.strip() for line in f.readlines() if line.strip()]
+
+    # ★ 3. 최초 실행 방어막 (처음 실행할 때 15개 글이 한꺼번에 날아오는 것을 방지)
+    if not seen_titles:
+        print("🚨 [초기 셋팅 완료] 현재 게시판의 모든 글을 머릿속에 기억했습니다! 다음부터 새 글만 알림을 보냅니다.")
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            for p in current_posts:
+                f.write(p['title'] + "\n")
+        return
+
+    # ★ 4. 현재 게시판 글들을 스캔하며, '기억에 없는 진짜 새 글'만 골라냅니다.
+    new_notices = []
+    for p in current_posts:
+        if p['title'] not in seen_titles:
+            new_notices.append(p)
+
+    if not new_notices:
+        print("💤 새로운 공지사항이 없습니다. (모두 이미 본 글입니다)")
+        return
+
+    # ★ 5. 새 글이 발견되면 (여러 개여도 모두) 순서대로 AI 요약해서 문자를 쏩니다!
+    print(f"🚨 {len(new_notices)}개의 진짜 새로운 공지사항 발견! 알림 전송 시작...")
+    
+    # 여러 개일 경우 예전 글부터 순서대로 보내기 위해 뒤집기
+    for notice in reversed(new_notices):
+        raw_content = get_notice_content(notice['link'], headers)
         ai_summary = summarize_with_ai(raw_content)
         
         message = (
-            f"🔔 [경북대 AIC 공지사항 핵심 정리]\n\n"
-            f"📌 제목: {latest_title}\n\n"
-            f"🤖 AI 3줄 요약 정리:\n{ai_summary}\n\n"
-            f"🔗 원문 바로가기:\n{latest_link}"
+            f"🔔 [경북대 AIC 새 공지사항]\n\n"
+            f"📌 제목: {notice['title']}\n\n"
+            f"🤖 AI 요약:\n{ai_summary}\n\n"
+            f"🔗 원문 바로가기:\n{notice['link']}"
         )
         send_telegram_message(message)
         
-        # 알림을 보낸 뒤에는 새 글 제목을 파일에 덮어써서 다음 시간엔 안 오도록 기억시킴
-        with open("latest_notice.txt", "w", encoding="utf-8") as f:
-            f.write(latest_title)
-        print("✅ 최신글 업데이트 및 AI 요약 알림 전송 완벽 성공!")
-    else:
-        # 제목이 똑같다면 메시지 전송 없이 조용히 종료!
-        print("💤 새로 올라온 공지사항이 없습니다. (알림 전송 안 함)")
+        # 알림을 보낸 새 글은 바로 '기억'에 추가!
+        seen_titles.append(notice['title'])
+
+    # ★ 6. 메모장이 너무 커지지 않게 최근 50개의 제목만 압축해서 저장해 둡니다.
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        for title in seen_titles[-50:]:
+            f.write(title + "\n")
+            
+    print("✅ 새 글 알림 전송 및 기억장치 업데이트 완벽 성공!")
 
 if __name__ == "__main__":
     check_new_notice()
